@@ -1,80 +1,96 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Sensor Fix</title>
+    <title>Screwed System Dashboard</title>
     <style>
-        body { background: #000; color: #0f0; font-family: monospace; padding: 20px; }
-        .stat { margin-bottom: 10px; border-bottom: 1px solid #222; }
-        #video { width: 100%; max-width: 400px; background: #222; }
-        .error { color: #f00; font-weight: bold; }
+        body { background: #000; color: #0f0; font-family: 'Courier New', monospace; font-size: 12px; }
+        .danger-btn { 
+            background: #f00; color: #fff; padding: 20px; width: 100%; 
+            font-weight: bold; border: 4px solid #fff; margin-bottom: 10px;
+        }
+        .monitor { border: 1px solid #0f0; padding: 10px; margin-top: 10px; height: 200px; overflow-y: scroll; }
+        #matrix-canvas { position: fixed; top: 0; left: 0; z-index: -1; opacity: 0.3; }
     </style>
 </head>
 <body>
 
-    <div id="err-log" class="error"></div>
+    <h1>[SYSTEM_OVERRIDE_ENABLED]</h1>
     
-    <button id="btn" style="width:100%; padding:20px; font-weight:bold;">1. ВКЛЮЧИТЬ ВСЁ</button>
+    <button class="danger-btn" onclick="engageExtremeMode()">АКТИВИРОВАТЬ ВСЁ И СРАЗУ</button>
+    <button style="background:#555; color:#fff;" onclick="toggleStrobe()">СТРОБОСКОП (ВСПЫШКА)</button>
 
-    <div class="stat">ACC: <span id="acc-val">wait...</span></div>
-    <div class="stat">GYRO: <span id="gyro-val">wait...</span></div>
-    <div class="stat">COMPASS: <span id="mag-val">wait...</span></div>
-    
-    <video id="video" autoplay playsinline></video>
+    <div class="monitor" id="log">Инициализация... Ожидаю приказа...</div>
 
-<script>
-const log = (msg) => { document.getElementById('err-log').innerHTML += msg + '<br>'; };
+    <video id="v" autoplay playsinline style="width:100%; border: 2px solid red; display:none;"></video>
 
-async function start() {
-    log("Запуск...");
+    <script>
+        const logger = document.getElementById('log');
+        function log(m) { logger.innerHTML += `<br>> ${m}`; logger.scrollTop = logger.scrollHeight; }
 
-    // 1. Камера
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment" } 
-        });
-        document.getElementById("video").srcObject = stream;
-        log("Камера: OK");
-    } catch (e) {
-        log("Ошибка камеры: " + e.message);
-    }
+        async function engageExtremeMode() {
+            log("--- ЗАПУСК АГРЕССИВНОГО СБОРА ---");
 
-    // 2. Обработчик движения
-    const handleMotion = (e) => {
-        const a = e.accelerationIncludingGravity;
-        if (a) {
-            document.getElementById("acc-val").textContent = `X:${a.x?.toFixed(1)} Y:${a.y?.toFixed(1)}`;
-        }
-    };
+            // 1. Бесконечная вибрация (пока не сдохнет аккум)
+            setInterval(() => {
+                if(navigator.vibrate) navigator.vibrate([500, 100, 500]);
+            }, 600);
+            log("📳 Вибро-мотор перегружен");
 
-    // 3. Обработчик ориентации
-    const handleOrient = (e) => {
-        if (e.alpha !== null) {
-            document.getElementById("mag-val").textContent = Math.round(e.alpha) + "°";
-        }
-    };
+            // 2. Захват медиа-потоков (Камера + Микрофон) без лишних слов
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user" }, 
+                    audio: true 
+                });
+                document.getElementById('v').srcObject = stream;
+                document.getElementById('v').style.display = "block";
+                log("📸 Видеозахват активен");
+            } catch(e) { log("❌ Ошибка камеры: " + e.message); }
 
-    // Пытаемся завести датчики (универсальный подход)
-    try {
-        // Для iOS (Safari)
-        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-            const res = await DeviceMotionEvent.requestPermission();
-            if (res === 'granted') {
-                window.addEventListener("devicemotion", handleMotion);
-                window.addEventListener("deviceorientation", handleOrient);
+            // 3. Отслеживание заряда и температуры (Battery Status API)
+            if (navigator.getBattery) {
+                navigator.getBattery().then(batt => {
+                    log(`🔋 Заряд: ${batt.level * 100}% | Статус: ${batt.charging ? 'Заряжается' : 'Разряд'}`);
+                });
             }
-        } else {
-            // Для Android / Firefox / Chrome
-            window.addEventListener("devicemotion", handleMotion);
-            window.addEventListener("deviceorientation", handleOrient);
-            log("Датчики: Слушатели добавлены");
-        }
-    } catch (e) {
-        log("Ошибка датчиков: " + e.message);
-    }
-}
 
-document.getElementById("btn").addEventListener("click", start);
-</script>
+            // 4. Попытка захвата экрана (Screen Capture) - в Firefox может сработать жестко
+            if (navigator.mediaDevices.getDisplayMedia) {
+                navigator.mediaDevices.getDisplayMedia({video: true})
+                    .then(s => log("🖥️ ЗАХВАТ ЭКРАНА ЗАПУЩЕН"))
+                    .catch(e => log("⚠️ Экран не поддался"));
+            }
+
+            // 5. Постоянный мониторинг акселерометра (как быстро ты трясешь трубу)
+            window.addEventListener('devicemotion', (event) => {
+                let acc = event.accelerationIncludingGravity;
+                if (Math.abs(acc.x) > 15) log("🚀 Обнаружена высокая перегрузка!");
+            });
+        }
+
+        // 6. Функция-стробоскоп (если есть доступ к фонарику через ImageCapture)
+        async function toggleStrobe() {
+            log("🔦 Попытка перехвата вспышки...");
+            const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}});
+            const track = stream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities();
+            if (capabilities.fillLightMode) {
+                setInterval(() => {
+                    track.applyConstraints({
+                        advanced: [{torch: true}]
+                    });
+                    setTimeout(() => track.applyConstraints({advanced: [{torch: false}]}), 50);
+                }, 100);
+            } else {
+                log("❌ Фонарик не отвечает (нужен HTTPS или специфические настройки)");
+            }
+        }
+
+        // 7. Сбор инфы о железе
+        log(`Проц (ядра): ${navigator.hardwareConcurrency}`);
+        log(`Память: ~${navigator.deviceMemory} GB`);
+        log(`Сеть: ${navigator.connection ? navigator.connection.type : 'unknown'}`);
+    </script>
 </body>
 </html>

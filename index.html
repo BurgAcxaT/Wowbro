@@ -1,134 +1,80 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sensor Dashboard</title>
+    <title>Sensor Fix</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #00ff00; margin: 0; padding: 20px; }
-        .dashboard { display: grid; gap: 15px; max-width: 500px; margin: auto; }
-        .card { background: #1e1e1e; padding: 15px; border-radius: 10px; border: 1px solid #333; }
-        #video-container { position: relative; width: 100%; border-radius: 10px; overflow: hidden; display: none; }
-        video { width: 100%; display: block; }
-        .crosshair { 
-            position: absolute; top: 50%; left: 50%; 
-            transform: translate(-50%, -50%); 
-            width: 20px; height: 20px; border: 2px solid white; border-radius: 50%; 
-        }
-        .val { color: #fff; font-weight: bold; font-family: monospace; }
-        #color-preview { width: 30px; height: 30px; display: inline-block; vertical-align: middle; border: 1px solid #fff; }
-        button { 
-            padding: 15px; background: #00ff00; color: #000; border: none; 
-            border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%;
-        }
+        body { background: #000; color: #0f0; font-family: monospace; padding: 20px; }
+        .stat { margin-bottom: 10px; border-bottom: 1px solid #222; }
+        #video { width: 100%; max-width: 400px; background: #222; }
+        .error { color: #f00; font-weight: bold; }
     </style>
 </head>
 <body>
 
-<div class="dashboard">
-    <button id="start-btn">ЗАПУСТИТЬ ДАТЧИКИ</button>
+    <div id="err-log" class="error"></div>
+    
+    <button id="btn" style="width:100%; padding:20px; font-weight:bold;">1. ВКЛЮЧИТЬ ВСЁ</button>
 
-    <div id="video-container">
-        <video id="video" autoplay playsinline muted></video>
-        <div class="crosshair"></div>
-    </div>
-
-    <div class="card">
-        <div>Акселерометр: <span class="val" id="acc-val">0 | 0 | 0</span></div>
-        <div>Гироскоп: <span class="val" id="gyro-val">0 | 0 | 0</span></div>
-        <div>Компас: <span class="val" id="mag-val">0°</span></div>
-    </div>
-
-    <div class="card">
-        <div>Цвет в центре: <span class="val" id="color-hex">#000000</span></div>
-        <div id="color-preview"></div>
-    </div>
-</div>
+    <div class="stat">ACC: <span id="acc-val">wait...</span></div>
+    <div class="stat">GYRO: <span id="gyro-val">wait...</span></div>
+    <div class="stat">COMPASS: <span id="mag-val">wait...</span></div>
+    
+    <video id="video" autoplay playsinline></video>
 
 <script>
-async function initAll() {
-    document.getElementById("start-btn").style.display = "none";
-    
-    // Камера
-    const videoContainer = document.getElementById("video-container");
-    const video = document.getElementById("video");
-    videoContainer.style.display = "block";
+const log = (msg) => { document.getElementById('err-log').innerHTML += msg + '<br>'; };
 
+async function start() {
+    log("Запуск...");
+
+    // 1. Камера
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment" }, // Пытаемся включить заднюю камеру
-            audio: false 
+            video: { facingMode: "environment" } 
         });
-        video.srcObject = stream;
-    } catch (err) {
-        console.warn("Камера не доступна:", err);
+        document.getElementById("video").srcObject = stream;
+        log("Камера: OK");
+    } catch (e) {
+        log("Ошибка камеры: " + e.message);
     }
 
-    // Вспомогательная функция для запуска Motion
-    function startMotion() {
-        window.addEventListener("devicemotion", e => {
-            const acc = e.accelerationIncludingGravity;
-            document.getElementById("acc-val").textContent =
-                `X:${acc?.x?.toFixed(2)||0} Y:${acc?.y?.toFixed(2)||0} Z:${acc?.z?.toFixed(2)||0}`;
-
-            const rot = e.rotationRate;
-            document.getElementById("gyro-val").textContent =
-                `${rot?.alpha?.toFixed(2)||0} | ${rot?.beta?.toFixed(2)||0} | ${rot?.gamma?.toFixed(2)||0}`;
-        });
-    }
-
-    // Запрос разрешений для iOS 13+
-    if (typeof DeviceMotionEvent?.requestPermission === "function") {
-        DeviceMotionEvent.requestPermission().then(res => {
-            if(res === "granted") startMotion();
-        }).catch(console.warn);
-    } else {
-        startMotion();
-    }
-
-    // Компас / ориентация
-    function startOrientation() {
-        window.addEventListener("deviceorientation", e => {
-            const alpha = e.alpha?.toFixed(1)||0;
-            document.getElementById("mag-val").textContent = `${alpha}°`;
-        });
-    }
-
-    if (typeof DeviceOrientationEvent?.requestPermission === "function") {
-        DeviceOrientationEvent.requestPermission().then(res => {
-            if(res === "granted") startOrientation();
-        }).catch(console.warn);
-    } else {
-        startOrientation();
-    }
-
-    // Цвет с камеры (через скрытый canvas)
-    const canvas = document.createElement("canvas");
-    const colorHex = document.getElementById("color-hex");
-    const colorPreview = document.getElementById("color-preview");
-
-    function updateColor() {
-        if(video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Берем пиксель ровно из центра
-            const px = ctx.getImageData(canvas.width/2, canvas.height/2, 1, 1).data;
-            const hex = "#" + ((1 << 24) + (px[0] << 16) + (px[1] << 8) + px[2]).toString(16).slice(1);
-            
-            colorHex.textContent = hex.toUpperCase();
-            colorPreview.style.background = hex;
+    // 2. Обработчик движения
+    const handleMotion = (e) => {
+        const a = e.accelerationIncludingGravity;
+        if (a) {
+            document.getElementById("acc-val").textContent = `X:${a.x?.toFixed(1)} Y:${a.y?.toFixed(1)}`;
         }
-        requestAnimationFrame(updateColor);
+    };
+
+    // 3. Обработчик ориентации
+    const handleOrient = (e) => {
+        if (e.alpha !== null) {
+            document.getElementById("mag-val").textContent = Math.round(e.alpha) + "°";
+        }
+    };
+
+    // Пытаемся завести датчики (универсальный подход)
+    try {
+        // Для iOS (Safari)
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            const res = await DeviceMotionEvent.requestPermission();
+            if (res === 'granted') {
+                window.addEventListener("devicemotion", handleMotion);
+                window.addEventListener("deviceorientation", handleOrient);
+            }
+        } else {
+            // Для Android / Firefox / Chrome
+            window.addEventListener("devicemotion", handleMotion);
+            window.addEventListener("deviceorientation", handleOrient);
+            log("Датчики: Слушатели добавлены");
+        }
+    } catch (e) {
+        log("Ошибка датчиков: " + e.message);
     }
-    updateColor();
 }
 
-// Запуск по клику (обязательно для современных браузеров)
-document.getElementById("start-btn").addEventListener("click", initAll);
+document.getElementById("btn").addEventListener("click", start);
 </script>
-
 </body>
 </html>

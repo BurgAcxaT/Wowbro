@@ -2,43 +2,133 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>JS Sensor God Mode</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor Dashboard</title>
     <style>
-        body { font-family: 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #eee; margin: 0; padding: 15px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .card { background: #161616; border: 1px solid #333; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .full { grid-column: span 2; }
-        .label { font-size: 0.7em; color: #888; text-transform: uppercase; margin-bottom: 5px; }
-        .value { font-size: 1.2em; color: #00ff95; font-family: monospace; }
-        button { background: #3d5afe; color: white; border: none; padding: 15px; border-radius: 10px; width: 100%; font-weight: bold; font-size: 1em; cursor: pointer; margin-bottom: 15px; }
-        button:active { background: #1a237e; }
-        #video-container { position: relative; width: 100%; height: 200px; background: #000; border-radius: 10px; overflow: hidden; display: none; margin-top: 10px; }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        .aim { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-        #color-preview { width: 100%; height: 40px; border-radius: 8px; margin-top: 10px; border: 2px solid #333; }
-        .warn { color: #ff4444; font-size: 0.8em; }
+        body { font-family: sans-serif; background: #121212; color: #00ff00; margin: 0; padding: 20px; }
+        .dashboard { display: grid; gap: 15px; max-width: 500px; margin: auto; }
+        .card { background: #1e1e1e; padding: 15px; border-radius: 10px; border: 1px solid #333; }
+        #video-container { position: relative; width: 100%; border-radius: 10px; overflow: hidden; display: none; }
+        video { width: 100%; display: block; }
+        .crosshair { 
+            position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            width: 20px; height: 20px; border: 2px solid white; border-radius: 50%; 
+        }
+        .val { color: #fff; font-weight: bold; font-family: monospace; }
+        #color-preview { width: 30px; height: 30px; display: inline-block; vertical-align: middle; border: 1px solid #fff; }
+        button { 
+            padding: 15px; background: #00ff00; color: #000; border: none; 
+            border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%;
+        }
     </style>
 </head>
 <body>
-<h2 style="text-align:center;">Sensor Panel 2.0</h2>
-<button onclick="initAll()">🚀 АКТИВИРОВАТЬ СИСТЕМЫ</button>
-<div class="grid">
-    <div class="card"><div class="label">Ухо</div><div id="prox-val" class="value">---</div></div>
-    <div class="card"><div class="label">Свет</div><div id="light-val" class="value">0</div></div>
-    <div class="card"><div class="label">Компас</div><div id="mag-val" class="value">0°</div></div>
-    <div class="card"><div class="label">Звук</div><div id="vol-val" class="value">0</div></div>
-    <div class="card full"><div class="label">Гироскоп</div><div id="gyro-val" class="value">0 | 0 | 0</div></div>
-    <div class="card full"><div class="label">Акселерометр</div><div id="acc-val" class="value">X:0 Y:0 Z:0</div></div>
-    <div class="card full">
-        <div class="label">Цвет (камера)</div>
-        <div id="video-container"><video id="video" autoplay></video><div class="aim"></div></div>
-        <div id="color-hex" class="value">#000000</div>
+
+<div class="dashboard">
+    <button id="start-btn">ЗАПУСТИТЬ ДАТЧИКИ</button>
+
+    <div id="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="crosshair"></div>
+    </div>
+
+    <div class="card">
+        <div>Акселерометр: <span class="val" id="acc-val">0 | 0 | 0</span></div>
+        <div>Гироскоп: <span class="val" id="gyro-val">0 | 0 | 0</span></div>
+        <div>Компас: <span class="val" id="mag-val">0°</span></div>
+    </div>
+
+    <div class="card">
+        <div>Цвет в центре: <span class="val" id="color-hex">#000000</span></div>
         <div id="color-preview"></div>
     </div>
 </div>
+
 <script>
-function initAll(){ alert("Файл работает"); }
+async function initAll() {
+    document.getElementById("start-btn").style.display = "none";
+    
+    // Камера
+    const videoContainer = document.getElementById("video-container");
+    const video = document.getElementById("video");
+    videoContainer.style.display = "block";
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment" }, // Пытаемся включить заднюю камеру
+            audio: false 
+        });
+        video.srcObject = stream;
+    } catch (err) {
+        console.warn("Камера не доступна:", err);
+    }
+
+    // Вспомогательная функция для запуска Motion
+    function startMotion() {
+        window.addEventListener("devicemotion", e => {
+            const acc = e.accelerationIncludingGravity;
+            document.getElementById("acc-val").textContent =
+                `X:${acc?.x?.toFixed(2)||0} Y:${acc?.y?.toFixed(2)||0} Z:${acc?.z?.toFixed(2)||0}`;
+
+            const rot = e.rotationRate;
+            document.getElementById("gyro-val").textContent =
+                `${rot?.alpha?.toFixed(2)||0} | ${rot?.beta?.toFixed(2)||0} | ${rot?.gamma?.toFixed(2)||0}`;
+        });
+    }
+
+    // Запрос разрешений для iOS 13+
+    if (typeof DeviceMotionEvent?.requestPermission === "function") {
+        DeviceMotionEvent.requestPermission().then(res => {
+            if(res === "granted") startMotion();
+        }).catch(console.warn);
+    } else {
+        startMotion();
+    }
+
+    // Компас / ориентация
+    function startOrientation() {
+        window.addEventListener("deviceorientation", e => {
+            const alpha = e.alpha?.toFixed(1)||0;
+            document.getElementById("mag-val").textContent = `${alpha}°`;
+        });
+    }
+
+    if (typeof DeviceOrientationEvent?.requestPermission === "function") {
+        DeviceOrientationEvent.requestPermission().then(res => {
+            if(res === "granted") startOrientation();
+        }).catch(console.warn);
+    } else {
+        startOrientation();
+    }
+
+    // Цвет с камеры (через скрытый canvas)
+    const canvas = document.createElement("canvas");
+    const colorHex = document.getElementById("color-hex");
+    const colorPreview = document.getElementById("color-preview");
+
+    function updateColor() {
+        if(video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Берем пиксель ровно из центра
+            const px = ctx.getImageData(canvas.width/2, canvas.height/2, 1, 1).data;
+            const hex = "#" + ((1 << 24) + (px[0] << 16) + (px[1] << 8) + px[2]).toString(16).slice(1);
+            
+            colorHex.textContent = hex.toUpperCase();
+            colorPreview.style.background = hex;
+        }
+        requestAnimationFrame(updateColor);
+    }
+    updateColor();
+}
+
+// Запуск по клику (обязательно для современных браузеров)
+document.getElementById("start-btn").addEventListener("click", initAll);
 </script>
+
 </body>
 </html>

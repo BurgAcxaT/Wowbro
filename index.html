@@ -2,95 +2,137 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Screwed System Dashboard</title>
+    <title>HARDWARE OVERRIDE</title>
     <style>
-        body { background: #000; color: #0f0; font-family: 'Courier New', monospace; font-size: 12px; }
-        .danger-btn { 
-            background: #f00; color: #fff; padding: 20px; width: 100%; 
-            font-weight: bold; border: 4px solid #fff; margin-bottom: 10px;
-        }
-        .monitor { border: 1px solid #0f0; padding: 10px; margin-top: 10px; height: 200px; overflow-y: scroll; }
-        #matrix-canvas { position: fixed; top: 0; left: 0; z-index: -1; opacity: 0.3; }
+        body { background: #050505; color: #00ff00; font-family: monospace; overflow-x: hidden; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; }
+        .sensor-card { border: 1px solid #00ff00; padding: 10px; background: rgba(0,255,0,0.05); }
+        .live { color: #ff003c; font-weight: bold; }
+        #cam-preview { width: 100%; height: 150px; object-fit: cover; border: 1px solid red; }
+        .btn-flash { background: gold; color: black; padding: 15px; width: 100%; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <h1>[SYSTEM_OVERRIDE_ENABLED]</h1>
-    
-    <button class="danger-btn" onclick="engageExtremeMode()">АКТИВИРОВАТЬ ВСЁ И СРАЗУ</button>
-    <button style="background:#555; color:#fff;" onclick="toggleStrobe()">СТРОБОСКОП (ВСПЫШКА)</button>
+    <h2 style="text-align:center;">[DEEP_HARDWARE_ACCESS]</h2>
 
-    <div class="monitor" id="log">Инициализация... Ожидаю приказа...</div>
+    <button class="btn-flash" onclick="initSensors()">ЗАПУСТИТЬ ВСЕ СЕНСОРЫ</button>
 
-    <video id="v" autoplay playsinline style="width:100%; border: 2px solid red; display:none;"></video>
+    <div class="grid">
+        <div class="sensor-card">
+            <b>📸 Камера (Цвет):</b><br>
+            <video id="v" autoplay playsinline></video>
+            <div id="color-detect">Цвет: ---</div>
+        </div>
+
+        <div class="sensor-card">
+            <b>👂 Приближение (Ухо):</b><br>
+            <span id="prox-val" class="live">Ожидание...</span>
+        </div>
+
+        <div class="sensor-card">
+            <b>☀️ Свет (Люкс):</b><br>
+            <span id="light-val" class="live">---</span>
+        </div>
+
+        <div class="sensor-card">
+            <b>🧲 Магнитометр:</b><br>
+            <span id="mag-val">---</span>
+        </div>
+
+        <div class="sensor-card">
+            <b>🔊 Звук (дБ):</b><br>
+            <span id="audio-val" class="live">---</span>
+        </div>
+        
+        <div class="sensor-card">
+            <b>📱 Гиро/Аксель:</b><br>
+            <span id="motion-val">---</span>
+        </div>
+    </div>
+
+    <div id="status-bar" style="background: #111; padding: 10px; font-size: 10px;">
+        Лог: <span id="log">Система готова.</span>
+    </div>
 
     <script>
-        const logger = document.getElementById('log');
-        function log(m) { logger.innerHTML += `<br>> ${m}`; logger.scrollTop = logger.scrollHeight; }
+        const log = (m) => document.getElementById('log').innerText = m;
 
-        async function engageExtremeMode() {
-            log("--- ЗАПУСК АГРЕССИВНОГО СБОРА ---");
+        async function initSensors() {
+            log("Инициализация...");
 
-            // 1. Бесконечная вибрация (пока не сдохнет аккум)
+            // 1. Камера и "Игра в цвета"
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            const video = document.getElementById('v');
+            video.srcObject = stream;
+            
+            // Анализ цвета (упрощенно через Canvas)
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
             setInterval(() => {
-                if(navigator.vibrate) navigator.vibrate([500, 100, 500]);
-            }, 600);
-            log("📳 Вибро-мотор перегружен");
+                ctx.drawImage(video, 0, 0, 1, 1);
+                const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+                document.getElementById('color-detect').innerText = `RGB: ${r},${g},${b}`;
+                document.getElementById('color-detect').style.color = `rgb(${r},${g},${b})`;
+            }, 500);
 
-            // 2. Захват медиа-потоков (Камера + Микрофон) без лишних слов
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user" }, 
-                    audio: true 
-                });
-                document.getElementById('v').srcObject = stream;
-                document.getElementById('v').style.display = "block";
-                log("📸 Видеозахват активен");
-            } catch(e) { log("❌ Ошибка камеры: " + e.message); }
-
-            // 3. Отслеживание заряда и температуры (Battery Status API)
-            if (navigator.getBattery) {
-                navigator.getBattery().then(batt => {
-                    log(`🔋 Заряд: ${batt.level * 100}% | Статус: ${batt.charging ? 'Заряжается' : 'Разряд'}`);
-                });
+            // 2. Датчик освещенности (Generic Sensor API)
+            if ('AmbientLightSensor' in window) {
+                const sensor = new AmbientLightSensor();
+                sensor.onreading = () => {
+                    document.getElementById('light-val').innerText = sensor.illuminance + " lux";
+                    if(sensor.illuminance < 10) log("ТЕМНО. Включаю скрытый режим...");
+                };
+                sensor.start();
             }
 
-            // 4. Попытка захвата экрана (Screen Capture) - в Firefox может сработать жестко
-            if (navigator.mediaDevices.getDisplayMedia) {
-                navigator.mediaDevices.getDisplayMedia({video: true})
-                    .then(s => log("🖥️ ЗАХВАТ ЭКРАНА ЗАПУЩЕН"))
-                    .catch(e => log("⚠️ Экран не поддался"));
+            // 3. Датчик приближения (Proximity)
+            if ('ProximitySensor' in window) {
+                const prox = new ProximitySensor();
+                prox.onreading = () => {
+                    document.getElementById('prox-val').innerText = prox.near ? "ВОЗЛЕ УХА" : "ДАЛЕКО";
+                    if(prox.near) navigator.vibrate(50); // Легкий отклик
+                };
+                prox.start();
             }
 
-            // 5. Постоянный мониторинг акселерометра (как быстро ты трясешь трубу)
-            window.addEventListener('devicemotion', (event) => {
-                let acc = event.accelerationIncludingGravity;
-                if (Math.abs(acc.x) > 15) log("🚀 Обнаружена высокая перегрузка!");
+            // 4. Громкость в дБ (Web Audio API)
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaStreamSource(await navigator.mediaDevices.getUserMedia({audio: true}));
+            const analyser = audioCtx.createAnalyser();
+            source.connect(analyser);
+            const data = new Uint8Array(analyser.frequencyBinCount);
+            setInterval(() => {
+                analyser.getByteFrequencyData(data);
+                let sum = data.reduce((a, b) => a + b, 0);
+                let db = Math.round(sum / data.length);
+                document.getElementById('audio-val').innerText = db + " units";
+            }, 100);
+
+            // 5. Магнитометр
+            if ('Magnetometer' in window) {
+                const mag = new Magnetometer();
+                mag.onreading = () => {
+                    document.getElementById('mag-val').innerText = `X:${mag.x.toFixed(1)} Y:${mag.y.toFixed(1)}`;
+                };
+                mag.start();
+            }
+
+            // 6. Кнопки громкости (через перехват изменения громкости или KeyDown)
+            // Примечание: В браузере перехватить кнопки громкости сложно, но можно ловить события 'keydown'
+            window.addEventListener('keydown', (e) => {
+                if(e.key === "VolumeUp" || e.key === "VolumeDown") {
+                    log(`КНОПКА ГРОМКОСТИ: ${e.key}`);
+                    navigator.vibrate(100);
+                }
+            });
+
+            // 7. Тряска (Акселерометр)
+            window.addEventListener('devicemotion', (e) => {
+                const a = e.accelerationIncludingGravity;
+                document.getElementById('motion-val').innerText = `X:${a.x.toFixed(1)}, Y:${a.y.toFixed(1)}`;
             });
         }
-
-        // 6. Функция-стробоскоп (если есть доступ к фонарику через ImageCapture)
-        async function toggleStrobe() {
-            log("🔦 Попытка перехвата вспышки...");
-            const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}});
-            const track = stream.getVideoTracks()[0];
-            const capabilities = track.getCapabilities();
-            if (capabilities.fillLightMode) {
-                setInterval(() => {
-                    track.applyConstraints({
-                        advanced: [{torch: true}]
-                    });
-                    setTimeout(() => track.applyConstraints({advanced: [{torch: false}]}), 50);
-                }, 100);
-            } else {
-                log("❌ Фонарик не отвечает (нужен HTTPS или специфические настройки)");
-            }
-        }
-
-        // 7. Сбор инфы о железе
-        log(`Проц (ядра): ${navigator.hardwareConcurrency}`);
-        log(`Память: ~${navigator.deviceMemory} GB`);
-        log(`Сеть: ${navigator.connection ? navigator.connection.type : 'unknown'}`);
     </script>
 </body>
 </html>
